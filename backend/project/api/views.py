@@ -4,7 +4,7 @@ from django.contrib.auth import authenticate
 from .models import User
 from .serializers import UserSerializer
 from rest_framework.views import APIView
-
+from django.shortcuts import get_object_or_404
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
@@ -28,3 +28,11 @@ class LoginView(APIView):
         if user:
             return Response({'message': 'Login successful'}, status=status.HTTP_200_OK)
         return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+
+
+
+class UserProfileView(APIView):
+    def get(self, request, username):
+        user = get_object_or_404(User, username=username)
+        serializer = UserSerializer(user)
+        return Response(serializer.data, status=status.HTTP_200_OK)
