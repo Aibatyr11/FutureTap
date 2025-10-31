@@ -1,10 +1,12 @@
 from rest_framework.routers import DefaultRouter
 from django.urls import path
-from .views import UserViewSet, RegisterView, LoginView, UserProfileView, ChildrenListView, ChildDetailView, ChildClubsView, UserStatsView
+from .views import (UserViewSet, RegisterView, LoginView,
+                    UserProfileView, ChildrenListView, ChildDetailView,
+                    ChildClubsView, UserStatsView, ClubPostViewSet)
 
 router = DefaultRouter()
 router.register(r'users', UserViewSet)
-
+router.register(r'posts', ClubPostViewSet, basename='clubpost')
 urlpatterns = [
     path('register/', RegisterView.as_view()),
     path('login/', LoginView.as_view()),

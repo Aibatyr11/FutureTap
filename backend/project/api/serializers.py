@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Child, Club, ChildClub
+from .models import User, Child, Club, ChildClub, ClubPost
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -31,3 +31,35 @@ class UserStatsSerializer(serializers.Serializer):
     total_children = serializers.IntegerField()
     total_clubs = serializers.IntegerField()
     total_enrollments = serializers.IntegerField()
+
+
+
+class ClubPostSerializer(serializers.ModelSerializer):
+    club_name = serializers.CharField(source='club.name', read_only=True)
+    author_username = serializers.CharField(source='author.username', read_only=True)
+    available_slots = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ClubPost
+        fields = [
+            'id',
+            'club',
+            'club_name',
+            'author',
+            'author_username',
+            'title',
+            'content',
+            'image',
+            'max_participants',
+            'current_participants',
+            'available_slots',
+            'created_at',
+            'updated_at',
+            'is_published',
+        ]
+
+    def get_available_slots(self, obj):
+        if obj.max_participants == 0:
+            return "Без ограничений"
+        return f"{obj.current_participants}/{obj.max_participants}"
+
