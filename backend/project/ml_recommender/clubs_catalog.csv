@@ -1,0 +1,7 @@
+club_id,name,description,tags,club_text
+1,Шахматы,Тренировки по шахмату для подростков и студентов.,Chess Club,шахматы тренировки по шахмату для подростков и студентов. chess club
+2,Клуб робототехники,Сборка и программирование роботов на Arduino и LEGO.,robotics programming engineering arduino lego hardware,клуб робототехники сборка и программирование роботов на arduino и lego. robotics programming engineering arduino lego hardware
+3,Вокальный кружок,"Постановка голоса, вокальная техника, подготовка к концертам.",music singing vocal performance choir,"вокальный кружок постановка голоса, вокальная техника, подготовка к концертам. music singing vocal performance choir"
+4,Клуб программирования,"Основы Python, алгоритмы, веб-разработка и участие в хакатонах.",coding programming python web development algorithms,"клуб программирования основы python, алгоритмы, веб-разработка и участие в хакатонах. coding programming python web development algorithms"
+5,Художественная студия,"Рисование, живопись, иллюстрация, основы графического дизайна.",art drawing painting design illustration creative,"художественная студия рисование, живопись, иллюстрация, основы графического дизайна. art drawing painting design illustration creative"
+6,Научно-исследовательский клуб,"Проекты по data science, машинному обучению и анализу данных.",research data science machine learning statistics ai,"научно-исследовательский клуб проекты по data science, машинному обучению и анализу данных. research data science machine learning statistics ai"
