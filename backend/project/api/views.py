@@ -16,9 +16,9 @@ from .models import (
 from .serializers import (
     RegisterSerializer, UserSerializer, UserProfileSerializer,
     CategorySerializer, CoachSerializer, CoachListSerializer,
-    ClubListSerializer, ClubDetailSerializer,
+    ClubListSerializer, ClubDetailSerializer, ClubCreateSerializer,
     ChildSerializer, EnrollmentSerializer, EnrollmentCreateSerializer,
-    LessonSerializer, ContactMessageSerializer, ClubPostSerializer,
+    LessonSerializer, LessonCreateSerializer, ContactMessageSerializer, ClubPostSerializer,
     RecommendationRequestSerializer, MLRecommendationRequestSerializer, UserStatsSerializer
 )
 from .recommendations import get_club_recommendations, RecommendationEngine
@@ -183,7 +183,7 @@ class CoachViewSet(viewsets.ReadOnlyModelViewSet):
 
 # ============== Club Views ==============
 
-class ClubViewSet(viewsets.ReadOnlyModelViewSet):
+class ClubViewSet(viewsets.ModelViewSet):
     """
     Clubs listing with filtering and search.
     Matches frontend data structure exactly.
@@ -196,9 +196,23 @@ class ClubViewSet(viewsets.ReadOnlyModelViewSet):
     ordering = ['-rating', '-featured']
 
     def get_serializer_class(self):
+        if self.action in ['create', 'update', 'partial_update']:
+            return ClubCreateSerializer
         if self.action == 'retrieve':
             return ClubDetailSerializer
         return ClubListSerializer
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'roster']:
+            return [IsAuthenticated()]
+        return [AllowAny()]
+
+    def perform_create(self, serializer):
+        from rest_framework.exceptions import PermissionDenied
+        if not hasattr(self.request.user, 'coach_profile'):
+            raise PermissionDenied("Only coaches can create classes")
+        club = serializer.save(is_active=True)
+        club.coaches.add(self.request.user.coach_profile)
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -207,6 +221,13 @@ class ClubViewSet(viewsets.ReadOnlyModelViewSet):
         category = self.request.query_params.get('category')
         if category and category != 'All Clubs':
             queryset = queryset.filter(category__name__iexact=category)
+
+        # Filter by coach
+        coach_id = self.request.query_params.get('coach')
+        if coach_id == 'me' and self.request.user.is_authenticated and hasattr(self.request.user, 'coach_profile'):
+            queryset = queryset.filter(coaches=self.request.user.coach_profile)
+        elif coach_id and coach_id != 'me':
+            queryset = queryset.filter(coaches__id=coach_id)
 
         # Filter by available spots
         available = self.request.query_params.get('available')
@@ -251,6 +272,18 @@ class ClubViewSet(viewsets.ReadOnlyModelViewSet):
         club = self.get_object()
         coaches = club.coaches.filter(is_active=True)
         serializer = CoachListSerializer(coaches, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def roster(self, request, pk=None):
+        """Get enrolled students for a coach's club"""
+        club = self.get_object()
+        if not hasattr(request.user, 'coach_profile') or request.user.coach_profile not in club.coaches.all():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Not authorized to view this roster")
+            
+        enrollments = Enrollment.objects.filter(club=club, status='active').select_related('user', 'child')
+        serializer = EnrollmentSerializer(enrollments, many=True)
         return Response(serializer.data)
 
 
@@ -307,27 +340,56 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
 
 # ============== Lesson Views ==============
 
-class LessonViewSet(viewsets.ReadOnlyModelViewSet):
-    """View lessons"""
-    serializer_class = LessonSerializer
+class LessonViewSet(viewsets.ModelViewSet):
+    """View and manage lessons"""
     permission_classes = [IsAuthenticated]
 
-    def get_queryset(self):
-        # Get lessons for user's enrolled clubs
-        enrolled_clubs = Enrollment.objects.filter(
-            user=self.request.user,
-            status='active'
-        ).values_list('club_id', flat=True)
+    def get_serializer_class(self):
+        if self.action in ['create', 'update', 'partial_update']:
+            return LessonCreateSerializer
+        return LessonSerializer
+        
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAuthenticated()]
+        return [IsAuthenticated()]
 
-        return Lesson.objects.filter(club_id__in=enrolled_clubs)
+    def perform_create(self, serializer):
+        from rest_framework.exceptions import PermissionDenied
+        user = self.request.user
+        club = serializer.validated_data['club']
+        
+        # Check if user is a coach of this club
+        if not hasattr(user, 'coach_profile') or user.coach_profile not in club.coaches.all():
+            raise PermissionDenied("Only coaches of this club can schedule lessons")
+            
+        serializer.save(coach=user.coach_profile)
+
+    def get_queryset(self):
+        user = self.request.user
+        
+        # Collect IDs of clubs the user is either enrolled in or coaching
+        club_ids = list(Enrollment.objects.filter(
+            user=user,
+            status='active'
+        ).values_list('club_id', flat=True))
+        
+        if hasattr(user, 'coach_profile'):
+            coach_clubs = user.coach_profile.clubs.values_list('id', flat=True)
+            club_ids.extend(coach_clubs)
+
+        return Lesson.objects.filter(club_id__in=club_ids)
 
     @action(detail=False, methods=['get'])
     def upcoming(self, request):
         """Get upcoming lessons for the user"""
         from django.utils import timezone
+        
+        # Lessons that are today or in the future
         lessons = self.get_queryset().filter(
             date__gte=timezone.now().date()
         ).order_by('date', 'start_time')[:10]
+        
         serializer = LessonSerializer(lessons, many=True)
         return Response(serializer.data)
 
@@ -572,3 +634,98 @@ class ChildrenListView(APIView):
             serializer.save(parent=parent)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ============== Audio Upload View ==============
+
+class AudioUploadView(APIView):
+    """
+    Эндпоинт для загрузки аудиозаписи урока от преподавателя.
+
+    POST /api/lessons/upload-audio/
+    Content-Type: multipart/form-data
+
+    Поля формы:
+        - audio_file  : аудиофайл (webm/ogg/wav)
+        - lesson_id   : ID урока (int)
+        - teacher_id  : ID пользователя-преподавателя (int)
+
+    Возвращает 202 Accepted сразу, не блокируя поток —
+    тяжёлая обработка (Whisper) будет выполняться фоновой Celery-задачей.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        # --- 1. Валидация обязательных полей ---
+        audio_file = request.FILES.get('audio_file')
+        lesson_id  = request.data.get('lesson_id')
+        teacher_id = request.data.get('teacher_id')
+
+        if not audio_file:
+            return Response(
+                {'error': 'Поле audio_file обязательно'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not lesson_id:
+            return Response(
+                {'error': 'Поле lesson_id обязательно'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # --- 2. Получаем урок из БД (PostgreSQL) ---
+        lesson = get_object_or_404(Lesson, id=lesson_id)
+
+        # Проверяем, что запрашивающий пользователь — коуч этого урока
+        if not hasattr(request.user, 'coach_profile') or lesson.coach != request.user.coach_profile:
+            return Response(
+                {'error': 'Только преподаватель этого урока может загружать запись'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # --- 3. Сохраняем файл через default_storage ---
+        # Путь: media/lesson_audios/lesson_<id>_<расширение>
+        from django.core.files.storage import default_storage
+        from django.core.files.base import ContentFile
+        import os
+
+        # Формируем безопасное имя файла с расширением оригинала
+        ext = os.path.splitext(audio_file.name)[1] or '.webm'
+        save_name = f'lesson_audios/lesson_{lesson_id}{ext}'
+
+        # Если запись уже была — удаляем старую версию перед сохранением
+        if default_storage.exists(save_name):
+            default_storage.delete(save_name)
+
+        # Записываем новый файл в хранилище
+        saved_path = default_storage.save(save_name, ContentFile(audio_file.read()))
+
+        # --- 4. Обновляем флаг is_recorded и путь к файлу в PostgreSQL ---
+        lesson.is_recorded = True
+        lesson.audio_file_path = saved_path  # сохраняем путь для доступа через API
+        lesson.save(update_fields=['is_recorded', 'audio_file_path'])
+
+        # --- 5. Заглушка для Celery + Whisper AI ---
+        # TODO: запустить фоновую задачу после настройки Celery + Redis
+        #
+        # from .tasks import transcribe_audio_task
+        # transcribe_audio_task.delay(
+        #     audio_path=saved_path,   # путь к файлу в хранилище
+        #     lesson_id=lesson.id,     # ID урока для привязки отчёта
+        #     teacher_id=teacher_id,   # ID преподавателя для логов
+        # )
+        #
+        # Задача transcribe_audio_task должна:
+        #   а) Передать аудиофайл в OpenAI Whisper / локальный Whisper
+        #   б) Сохранить транскрипцию в MongoDB (коллекция lesson_transcripts)
+        #   в) Обновить поле lesson.transcript_status в PostgreSQL
+
+        return Response(
+            {
+                'status': 'accepted',
+                'message': 'Аудиозапись принята. Транскрипция будет выполнена в фоне.',
+                'lesson_id': lesson.id,
+                'is_recorded': True,
+                'file_path': saved_path,
+            },
+            status=status.HTTP_202_ACCEPTED
+        )

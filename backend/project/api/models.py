@@ -185,6 +185,12 @@ class Lesson(models.Model):
     date = models.DateField()
     start_time = models.TimeField()
     end_time = models.TimeField()
+    meet_link = models.URLField(blank=True, null=True)
+
+    # Флаг аудио-фиксации: становится True после успешной загрузки аудиозаписи урока
+    is_recorded = models.BooleanField(default=False)
+    # Путь к аудиофайлу внутри MEDIA_ROOT (напр.: lesson_audios/lesson_1.webm)
+    audio_file_path = models.CharField(max_length=500, blank=True, default='')
 
     class Meta:
         ordering = ['date', 'start_time']

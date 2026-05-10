@@ -49,6 +49,7 @@ class UserSerializer(serializers.ModelSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     enrollments_count = serializers.SerializerMethodField()
     children_count = serializers.SerializerMethodField()
+    is_coach = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -56,15 +57,18 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'id', 'email', 'username', 'first_name', 'last_name',
             'age', 'bio', 'avatar', 'interests',
             'preferred_categories', 'preferred_schedule',
-            'enrollments_count', 'children_count'
+            'enrollments_count', 'children_count', 'is_coach'
         ]
-        read_only_fields = ['id', 'email']
+        read_only_fields = ['id', 'email', 'is_coach']
 
     def get_enrollments_count(self, obj):
         return obj.enrollments.filter(status='active').count()
 
     def get_children_count(self, obj):
         return obj.children.count()
+
+    def get_is_coach(self, obj):
+        return hasattr(obj, 'coach_profile') and obj.coach_profile is not None
 
 
 # ============== Category Serializers ==============
@@ -141,6 +145,17 @@ class ClubDetailSerializer(serializers.ModelSerializer):
         ]
 
 
+class ClubCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating clubs/classes"""
+    class Meta:
+        model = Club
+        fields = [
+            'id', 'title', 'description', 'day', 'time',
+            'capacity', 'min_age', 'max_age', 'location', 'category',
+            'icon', 'color'
+        ]
+
+
 # ============== Child Serializers ==============
 
 class ChildSerializer(serializers.ModelSerializer):
@@ -191,15 +206,22 @@ class EnrollmentCreateSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
+class EnrollmentUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'first_name', 'last_name', 'username', 'avatar']
+
+
 class EnrollmentSerializer(serializers.ModelSerializer):
     club = ClubListSerializer(read_only=True)
     coach = CoachListSerializer(read_only=True)
     child = ChildSerializer(read_only=True)
+    user = EnrollmentUserSerializer(read_only=True)
 
     class Meta:
         model = Enrollment
         fields = [
-            'id', 'club', 'coach', 'child',
+            'id', 'club', 'coach', 'child', 'user',
             'enrollment_date', 'status', 'notes'
         ]
         read_only_fields = ['id', 'enrollment_date']
@@ -210,12 +232,35 @@ class EnrollmentSerializer(serializers.ModelSerializer):
 class LessonSerializer(serializers.ModelSerializer):
     club_title = serializers.CharField(source='club.title', read_only=True)
     coach_name = serializers.CharField(source='coach.name', read_only=True)
+    # Полный URL аудиофайла (или null если записи нет)
+    audio_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Lesson
         fields = [
             'id', 'club', 'club_title', 'coach', 'coach_name',
-            'title', 'description', 'date', 'start_time', 'end_time'
+            'title', 'description', 'date', 'start_time', 'end_time',
+            'meet_link', 'is_recorded', 'audio_url'
+        ]
+
+    def get_audio_url(self, obj):
+        """Returns full URL to the audio file, or null if not recorded."""
+        if not obj.is_recorded or not obj.audio_file_path:
+            return None
+        request = self.context.get('request')
+        # Формируем полный URL: http://localhost:8000/media/lesson_audios/lesson_1.webm
+        if request:
+            from django.conf import settings
+            return request.build_absolute_uri(settings.MEDIA_URL + obj.audio_file_path)
+        return None
+
+
+class LessonCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Lesson
+        fields = [
+            'id', 'club', 'title', 'description', 
+            'date', 'start_time', 'end_time', 'meet_link'
         ]
 
 

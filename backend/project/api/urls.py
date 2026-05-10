@@ -20,6 +20,8 @@ from .views import (
     EnrollmentViewSet,
     # Lessons
     LessonViewSet,
+    # Audio
+    AudioUploadView,
     # Posts
     ClubPostViewSet,
     # Contacts
@@ -57,6 +59,9 @@ urlpatterns = [
 
     # ============== Contact ==============
     path('contacts/', ContactMessageView.as_view(), name='contact'),
+
+    # ============== Audio Upload ==============
+    path('lessons/upload-audio/', AudioUploadView.as_view(), name='audio-upload'),
 
     # ============== User Stats ==============
     path('stats/', UserStatsView.as_view(), name='my-stats'),
