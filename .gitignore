@@ -1,0 +1,54 @@
+# =============================================================
+# .gitignore для проекта FutureTap / TalantTap
+# =============================================================
+
+# --- Секретные переменные окружения (НИКОГДА не коммитить!) ---
+.env
+.env.local
+.env.*.local
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+
+# --- Виртуальное окружение ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Django ---
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+
+# --- Node.js / Frontend ---
+node_modules/
+.npm/
+dist/
+build/
+
+# --- IDE ---
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Whisper кэш моделей (тяжёлые файлы, не нужны в Git) ---
+~/.cache/whisper/

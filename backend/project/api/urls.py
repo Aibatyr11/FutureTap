@@ -22,6 +22,9 @@ from .views import (
     LessonViewSet,
     # Audio
     AudioUploadView,
+    # AI Report
+    GenerateLessonReportView,
+    GetLessonReportView,
     # Posts
     ClubPostViewSet,
     # Contacts
@@ -62,6 +65,13 @@ urlpatterns = [
 
     # ============== Audio Upload ==============
     path('lessons/upload-audio/', AudioUploadView.as_view(), name='audio-upload'),
+
+    # ============== AI Report Generation ==============
+    # Запускает синхронный пайплайн: Whisper -> Grok -> MongoDB
+    # Требует аутентификации; доступен только коучу данного урока.
+    path('lessons/<int:lesson_id>/generate-report/', GenerateLessonReportView.as_view(), name='generate-lesson-report'),
+    # Получение сохранённого отчёта из MongoDB
+    path('lessons/<int:lesson_id>/report/', GetLessonReportView.as_view(), name='get-lesson-report'),
 
     # ============== User Stats ==============
     path('stats/', UserStatsView.as_view(), name='my-stats'),

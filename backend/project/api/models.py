@@ -192,6 +192,24 @@ class Lesson(models.Model):
     # Путь к аудиофайлу внутри MEDIA_ROOT (напр.: lesson_audios/lesson_1.webm)
     audio_file_path = models.CharField(max_length=500, blank=True, default='')
 
+    # Статус AI-обработки аудиозаписи урока.
+    # Значения: 'pending'     — запись загружена, обработка ещё не запускалась
+    #            'processing'  — пайплайн Whisper→Grok запущен, ждём результата
+    #            'completed'   — отчёт успешно сохранён в MongoDB
+    #            'failed'      — произошла ошибка на одном из этапов
+    AI_STATUS_CHOICES = [
+        ('pending',    'Ожидает обработки'),
+        ('processing', 'Обрабатывается'),
+        ('completed',  'Завершено'),
+        ('failed',     'Ошибка'),
+    ]
+    ai_status = models.CharField(
+        max_length=20,
+        choices=AI_STATUS_CHOICES,
+        default='pending',
+        db_index=True,  # индекс для быстрой фильтрации по статусу
+    )
+
     class Meta:
         ordering = ['date', 'start_time']
 

@@ -729,3 +729,208 @@ class AudioUploadView(APIView):
             },
             status=status.HTTP_202_ACCEPTED
         )
+
+
+# ============== AI Report Generation View ==============
+
+class GenerateLessonReportView(APIView):
+    """
+    Эндпоинт запуска синхронного AI-пайплайна для обработки аудиозаписи урока.
+
+    POST /api/lessons/<lesson_id>/generate-report/
+
+    Требует аутентификации. Запрашивающий пользователь должен быть коучем урока.
+
+    Пайплайн (все шаги синхронные):
+        1. Получить объект Lesson из PostgreSQL по lesson_id.
+        2. Проверить наличие загруженной аудиозаписи (is_recorded=True).
+        3. Сформировать абсолютный путь к аудиофайлу через MEDIA_ROOT.
+        4. Установить ai_status='processing' и сохранить в PostgreSQL.
+        5. Вызвать Whisper (STT) -> получить транскрипт текста.
+        6. Вызвать Grok API (LLM) -> получить JSON-отчёт {summary, tags, action_items}.
+        7. Сохранить транскрипт + отчёт в MongoDB (коллекция lesson_reports).
+        8. Обновить ai_status='completed' в PostgreSQL.
+        9. Вернуть клиенту JSON с результатами обработки.
+       10. При любой ошибке -> установить ai_status='failed' и вернуть 500.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, lesson_id):
+        # Импортируем здесь, чтобы избежать циклических импортов
+        # и не грузить тяжёлые зависимости (whisper, pymongo) при старте сервера.
+        import os
+        import logging
+        from django.conf import settings as django_settings
+        from .ai_services import transcribe_audio, analyze_with_grok, save_lesson_report
+
+        ai_logger = logging.getLogger(__name__)
+
+        # --- Шаг 1: Получаем урок из PostgreSQL ---
+        lesson = get_object_or_404(Lesson, id=lesson_id)
+
+        # Проверяем, что запрашивающий пользователь является коучем этого урока
+        if not hasattr(request.user, 'coach_profile') or lesson.coach != request.user.coach_profile:
+            return Response(
+                {'error': 'Только преподаватель этого урока может запустить AI-анализ'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Проверяем, что аудиозапись была загружена (is_recorded=True и путь не пустой)
+        if not lesson.is_recorded or not lesson.audio_file_path:
+            return Response(
+                {
+                    'error': (
+                        'Аудиозапись урока не найдена. '
+                        'Сначала загрузите запись через /api/lessons/upload-audio/'
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Предотвращаем повторный запуск, если обработка уже идёт
+        if lesson.ai_status == 'processing':
+            return Response(
+                {'error': 'AI-обработка уже запущена для этого урока. Подождите завершения.'},
+                status=status.HTTP_409_CONFLICT
+            )
+
+        # --- Шаг 2: Формируем абсолютный путь к аудиофайлу ---
+        # audio_file_path хранит относительный путь от MEDIA_ROOT
+        # (например: 'lesson_audios/lesson_5.webm')
+        audio_absolute_path = os.path.join(
+            str(django_settings.MEDIA_ROOT),
+            lesson.audio_file_path
+        )
+
+        # --- Шаг 3: Устанавливаем статус 'processing' в PostgreSQL ---
+        lesson.ai_status = 'processing'
+        lesson.save(update_fields=['ai_status'])
+
+        try:
+            # --- Шаг 4: Speech-to-Text (Whisper) ---
+            # Синхронная операция — может занять от секунд до минут
+            # в зависимости от длины записи и мощности CPU/GPU.
+            transcript_text = transcribe_audio(audio_absolute_path)
+
+            # --- Шаг 5: LLM-анализ (Grok API) ---
+            # Отправляем транскрипт в Grok и получаем структурированный JSON-отчёт.
+            ai_report = analyze_with_grok(transcript_text)
+
+            # --- Шаг 6: Сохраняем результаты в MongoDB ---
+            # Коллекция 'lesson_reports' хранит транскрипт и отчёт в одном документе.
+            # Поле lesson_id связывает документ MongoDB с записью PostgreSQL.
+            mongo_report_id = save_lesson_report(
+                lesson_id=lesson.id,
+                transcript_text=transcript_text,
+                ai_report=ai_report,
+            )
+
+            # --- Шаг 7: Обновляем статус в PostgreSQL на 'completed' ---
+            lesson.ai_status = 'completed'
+            lesson.save(update_fields=['ai_status'])
+
+            # --- Шаг 8: Возвращаем успешный ответ клиенту ---
+            return Response(
+                {
+                    'status': 'completed',
+                    'lesson_id': lesson.id,
+                    'mongo_report_id': mongo_report_id,   # ObjectId документа в MongoDB
+                    'transcript': transcript_text,         # полный текст транскрипции
+                    'report': ai_report,                   # {summary, tags, action_items}
+                },
+                status=status.HTTP_200_OK
+            )
+
+        except RuntimeError as exc:
+            # Логируем ошибку для последующей диагностики
+            ai_logger.error(
+                'AI-пайплайн: ошибка при обработке урока %d — %s',
+                lesson.id, exc
+            )
+
+            # Помечаем урок как завершившийся с ошибкой в PostgreSQL
+            lesson.ai_status = 'failed'
+            lesson.save(update_fields=['ai_status'])
+
+            return Response(
+                {
+                    'error': 'Ошибка AI-обработки: ' + str(exc),
+                    'lesson_id': lesson.id,
+                    'ai_status': 'failed',
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+# ============== Get Saved Lesson Report View ==============
+
+class GetLessonReportView(APIView):
+    """
+    Эндпоинт получения сохранённого AI-отчёта урока из MongoDB.
+
+    GET /api/lessons/<lesson_id>/report/
+
+    Возвращает последний отчёт для данного урока (если есть),
+    или 404 с exists=False если отчёт ещё не генерировался.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, lesson_id):
+        import logging
+        from django.conf import settings as django_settings
+        from pymongo import MongoClient
+
+        ai_logger = logging.getLogger(__name__)
+
+        # Проверяем наличие урока в PostgreSQL
+        lesson = get_object_or_404(Lesson, id=lesson_id)
+
+        # Доступ: только коуч урока или администратор
+        if not request.user.is_staff:
+            if not hasattr(request.user, 'coach_profile') or lesson.coach != request.user.coach_profile:
+                return Response(
+                    {'error': 'Доступ запрещён'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        try:
+            client = MongoClient(django_settings.MONGO_URI)
+            db = client[django_settings.MONGO_DB_NAME]
+            collection = db['lesson_reports']
+
+            # Берём самый свежий отчёт для урока
+            doc = collection.find_one(
+                {'lesson_id': lesson_id},
+                sort=[('created_at', -1)]
+            )
+
+            if not doc:
+                return Response(
+                    {'exists': False, 'message': 'Отчёт ещё не сгенерирован'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Сериализуем ObjectId в строку для JSON
+            doc['_id'] = str(doc['_id'])
+            if doc.get('created_at'):
+                doc['created_at'] = doc['created_at'].isoformat()
+
+            return Response({
+                'exists': True,
+                'lesson_id': lesson_id,
+                'ai_status': lesson.ai_status,
+                'report': {
+                    'summary': doc.get('summary', ''),
+                    'tags': doc.get('tags', []),
+                    'action_items': doc.get('action_items', []),
+                    'transcript': doc.get('transcript', ''),
+                    'created_at': doc.get('created_at'),
+                }
+            }, status=status.HTTP_200_OK)
+
+        except Exception as exc:
+            ai_logger.error('GetLessonReportView: ошибка %s', exc)
+            return Response(
+                {'error': f'Ошибка получения отчёта: {str(exc)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
