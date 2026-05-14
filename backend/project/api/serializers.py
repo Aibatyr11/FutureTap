@@ -103,7 +103,7 @@ class CoachListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Coach
         fields = [
-            'id', 'name', 'avatar', 'rating', 'students',
+            'id', 'name', 'avatar', 'photo', 'rating', 'students',
             'experience', 'specialization', 'availability', 'color'
         ]
 
