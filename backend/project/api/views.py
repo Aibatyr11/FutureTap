@@ -733,6 +733,46 @@ class AudioUploadView(APIView):
 
 # ============== AI Report Generation View ==============
 
+class AIChatView(APIView):
+    """
+    Эндпоинт для AI Чата с использованием RAG-пайплайна.
+    Извлекает контекст из последних уроков пользователя и отправляет запрос в Grok API.
+    
+    POST /api/chat/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        messages = request.data.get('messages', [])
+        
+        # Конвертируем формат frontend ({text, sender}) в формат Grok API ({role, content})
+        formatted_messages = []
+        for msg in messages:
+            role = "user" if msg.get("sender") == "user" else "assistant"
+            # Если это уже формат role/content, используем его
+            if "role" in msg and "content" in msg:
+                formatted_messages.append(msg)
+            elif "text" in msg:
+                formatted_messages.append({"role": role, "content": msg["text"]})
+
+        query_text = formatted_messages[-1].get("content", "") if formatted_messages else ""
+        
+        from .ai_services import get_student_lessons_context, chat_with_grok
+        
+        # Получаем контекст прошлых уроков для текущего пользователя
+        # Это обеспечивает безопасность: пользователь получит контекст только из своих уроков (своих кружков)
+        context_string = get_student_lessons_context(request.user.id, query_text)
+        
+        try:
+            bot_reply = chat_with_grok(formatted_messages, context_string)
+            return Response({"reply": bot_reply})
+        except RuntimeError as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
 class GenerateLessonReportView(APIView):
     """
     Эндпоинт запуска синхронного AI-пайплайна для обработки аудиозаписи урока.

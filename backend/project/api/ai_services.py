@@ -315,3 +315,123 @@ def save_lesson_report(
     except Exception as exc:
         logger.error("MongoDB: ошибка сохранения отчёта для урока %d — %s", lesson_id, exc)
         raise RuntimeError(f"Ошибка сохранения в MongoDB: {exc}") from exc
+
+
+# ==============================================================================
+# 4. Извлечение контекста для AI-чата (RAG MVP)
+# ==============================================================================
+
+def get_student_lessons_context(user_id: int, query_text: str = "") -> str:
+    """
+    Извлекает контекст из последних пройденных уроков ученика.
+    Находит последние 3-5 обработанных уроков, к которым привязан ученик,
+    и извлекает их summary и tags из MongoDB.
+    """
+    try:
+        from .models import Lesson, Enrollment
+        
+        # 1. Находим все кружки, на которые записан ученик (или которые он ведет как коуч)
+        club_ids = list(Enrollment.objects.filter(
+            user_id=user_id, 
+            status='active'
+        ).values_list('club_id', flat=True))
+        
+        # Если пользователь — преподаватель, добавляем его кружки
+        user = Enrollment.objects.model._meta.get_field('user').remote_field.model.objects.get(id=user_id)
+        if hasattr(user, 'coach_profile'):
+            coach_clubs = user.coach_profile.clubs.values_list('id', flat=True)
+            club_ids.extend(coach_clubs)
+        
+        if not club_ids:
+            return "Ученик/Учитель не привязан ни к одному кружку."
+
+        # 2. Находим последние 5 уроков из этих кружков с готовым AI-отчетом
+        recent_lessons = Lesson.objects.filter(
+            club_id__in=club_ids,
+            ai_status='completed'
+        ).order_by('-date', '-start_time')[:5]
+
+        if not recent_lessons:
+            return "Нет обработанных отчетов по прошлым урокам."
+
+        # 3. Извлекаем данные из MongoDB
+        db = _get_mongo_db()
+        collection = db["lesson_reports"]
+        
+        context_parts = []
+        for lesson in recent_lessons:
+            # Ищем отчет по lesson_id
+            report = collection.find_one({"lesson_id": lesson.id})
+            if report:
+                summary = report.get("summary", "Нет описания")
+                tags = ", ".join(report.get("tags", []))
+                context_parts.append(
+                    f"Название урока: {lesson.title}\n"
+                    f"Дата: {lesson.date}\n"
+                    f"Краткое содержание: {summary}\n"
+                    f"Темы (теги): {tags}"
+                )
+                
+        if not context_parts:
+            return "Отчеты не найдены в базе данных."
+
+        return "\n\n".join(context_parts)
+
+    except Exception as exc:
+        logger.error("Ошибка при извлечении контекста для user %s: %s", user_id, exc)
+        return "Ошибка при получении контекста."
+
+
+# ==============================================================================
+# 5. Чат с Grok (AI Assistant с RAG)
+# ==============================================================================
+
+def chat_with_grok(messages: list, context_string: str) -> str:
+    """
+    Отправляет историю сообщений в Grok API с системным промптом,
+    содержащим контекст из прошлых уроков ученика.
+    """
+    if not settings.GROK_API_KEY:
+        raise RuntimeError("GROK_API_KEY не задан.")
+
+    system_prompt = (
+        "Ты — умный ИИ-наставник платформы TalentTap. Твоя цель — помогать ученику. "
+        f"Вот данные о последних пройденных уроках ученика:\n{context_string}\n\n"
+        "Отвечай на вопросы пользователя, опираясь на эти данные. "
+        "Если вопрос не связан с уроками, просто поддерживай дружелюбную беседу."
+    )
+
+    # Убеждаемся, что сообщения отформатированы правильно
+    formatted_messages = [{"role": "system", "content": system_prompt}]
+    for msg in messages:
+        # Ожидаем, что msg - это словарь {"role": "user"/"assistant", "content": "..."}
+        if isinstance(msg, dict) and "role" in msg and "content" in msg:
+            formatted_messages.append(msg)
+
+    payload = {
+        "model": settings.GROK_MODEL,
+        "messages": formatted_messages,
+        "temperature": 0.7,
+        "max_tokens": 1024,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {settings.GROK_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        response = requests.post(
+            settings.GROK_API_URL,
+            json=payload,
+            headers=headers,
+            timeout=30,
+        )
+        response.raise_for_status()
+        response_data = response.json()
+        return response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    except Exception as exc:
+        logger.error("Ошибка при запросе к Grok API для чата: %s", exc)
+        raise RuntimeError(f"Grok API error: {exc}") from exc
+
+

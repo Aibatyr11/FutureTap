@@ -31,6 +31,8 @@ from .views import (
     ContactMessageView,
     # Recommendations
     RecommendationView, TrendingClubsView, SimilarClubsView, MLRecommendClubsView,
+    # AI Chat
+    AIChatView,
 )
 
 # Router for ViewSets
@@ -65,6 +67,9 @@ urlpatterns = [
 
     # ============== Audio Upload ==============
     path('lessons/upload-audio/', AudioUploadView.as_view(), name='audio-upload'),
+
+    # ============== AI Chat RAG ==============
+    path('chat/', AIChatView.as_view(), name='ai-chat'),
 
     # ============== AI Report Generation ==============
     # Запускает синхронный пайплайн: Whisper -> Grok -> MongoDB
