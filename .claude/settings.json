@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(.venv/Scripts/python -c \"from project.ml_recommender.recommender import recommend_clubs; result = recommend_clubs\\(''robotics programming'', top_n=3\\); print\\(''Success! Recommendations:'', len\\(result\\)\\)\")"
-    ]
-  }
-}

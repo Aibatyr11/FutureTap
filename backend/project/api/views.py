@@ -29,7 +29,6 @@ User = get_user_model()
 # ============== Auth Views ==============
 
 class RegisterView(generics.CreateAPIView):
-    """User registration endpoint"""
     queryset = User.objects.all()
     permission_classes = [AllowAny]
     serializer_class = RegisterSerializer
@@ -39,7 +38,6 @@ class RegisterView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
-        # Generate tokens
         refresh = RefreshToken.for_user(user)
 
         return Response({
@@ -304,12 +302,6 @@ class ChildViewSet(viewsets.ModelViewSet):
 # ============== Enrollment Views ==============
 
 class EnrollmentViewSet(viewsets.ModelViewSet):
-    """
-    Manage club enrollments.
-    - GET: List user's enrollments
-    - POST: Create new enrollment
-    - DELETE: Cancel enrollment
-    """
     permission_classes = [IsAuthenticated]
 
     def get_serializer_class(self):
@@ -324,14 +316,12 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def active(self, request):
-        """Get only active enrollments"""
         enrollments = self.get_queryset().filter(status='active')
         serializer = EnrollmentSerializer(enrollments, many=True)
         return Response(serializer.data)
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
-        """Cancel an enrollment"""
         enrollment = self.get_object()
         enrollment.status = 'cancelled'
         enrollment.save()

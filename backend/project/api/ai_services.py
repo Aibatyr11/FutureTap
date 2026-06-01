@@ -1,5 +1,5 @@
 """
-ai_services.py — Сервисный слой для AI-обработки аудиозаписей уроков.
+ai_services.py — Сервисный слой для обработки аудиозаписей уроков.
 
 Содержит три независимых функции:
     1. transcribe_audio()  — Speech-to-Text через локальный openai-whisper
@@ -48,28 +48,13 @@ def _get_mongo_db():
 # ==============================================================================
 
 def transcribe_audio(audio_path: str) -> str:
-    """
-    Транскрибирует аудиофайл в текст с помощью локальной модели OpenAI Whisper.
-
-    Аргументы:
-        audio_path (str): Абсолютный путь к аудиофайлу на диске.
-
-    Возвращает:
-        str: Транскрибированный текст. При ошибке выбрасывает RuntimeError.
-    """
     import shutil
-
-    # Нормализуем путь — убираем смешанные слеши (актуально для Windows)
     audio_path = os.path.normpath(audio_path)
-
-    # Явно добавляем директорию ffmpeg в PATH текущего процесса,
-    # потому что на Windows winget обновляет PATH в реестре, но уже
-    # запущенный Python-процесс не видит это изменение автоматически.
     _FFMPEG_WINGET_DIR = os.path.expandvars(
         r"%LOCALAPPDATA%\Microsoft\WinGet\Packages"
     )
     if os.path.isdir(_FFMPEG_WINGET_DIR):
-        # Ищем папку bin с ffmpeg.EXE рекурсивно в директории winget
+
         for root_dir, dirs, files in os.walk(_FFMPEG_WINGET_DIR):
             if any(f.lower() == 'ffmpeg.exe' for f in files):
                 if root_dir not in os.environ.get('PATH', ''):
@@ -77,11 +62,9 @@ def transcribe_audio(audio_path: str) -> str:
                     logger.info("ffmpeg найден и добавлен в PATH: %s", root_dir)
                 break
 
-    # Дополнительная проверка через shutil.which
     if not shutil.which('ffmpeg'):
         logger.warning("ffmpeg не найден в PATH — транскрибация .webm может не работать!")
 
-    # Проверяем, существует ли файл на диске перед запуском тяжёлой модели
     if not os.path.exists(audio_path):
         raise RuntimeError(
             f"Аудиофайл не найден по пути: {audio_path}. "
@@ -91,11 +74,7 @@ def transcribe_audio(audio_path: str) -> str:
     logger.info("Whisper: начало транскрибации файла '%s'", audio_path)
 
     try:
-        # Загружаем модель Whisper 'base' (на CPU/GPU — Whisper определяет автоматически).
-        # Если нужна более высокая точность — замените 'base' на 'small' или 'medium'.
         model = whisper.load_model("base")
-
-        # fp16=False: отключаем float16, так как CPU не поддерживает его эффективно.
         result = model.transcribe(audio_path, fp16=False)
 
         transcript_text = result.get("text", "").strip()
@@ -274,7 +253,7 @@ def save_lesson_report(
     ai_report: dict,
 ) -> str:
     """
-    Сохраняет транскрипт и AI-отчёт в MongoDB в коллекцию 'lesson_reports'.
+    Сохраняет транскрипт и отчёт в MongoDB в коллекцию 'lesson_reports'.
 
     Каждый документ привязан к уроку через поле 'lesson_id' — это позволяет
     легко найти отчёт по ID урока из PostgreSQL.
@@ -282,7 +261,7 @@ def save_lesson_report(
     Аргументы:
         lesson_id (int):        ID урока из PostgreSQL (для связи документов).
         transcript_text (str):  Сырой текст транскрипции от Whisper.
-        ai_report (dict):       Структурированный JSON-отчёт от Grok.
+        ai_report (dict):       Структурированный JSON-отчёт.
 
     Возвращает:
         str: Строковое представление ObjectId вставленного документа.
@@ -292,7 +271,7 @@ def save_lesson_report(
     """
     try:
         db = _get_mongo_db()
-        collection = db["lesson_reports"]  # коллекция для AI-отчётов уроков
+        collection = db["lesson_reports"]  # коллекция для отчётов уроков
 
         # Документ объединяет транскрипт, отчёт и метаданные в одном месте
         document = {
@@ -345,7 +324,7 @@ def get_student_lessons_context(user_id: int, query_text: str = "") -> str:
         if not club_ids:
             return "Ученик/Учитель не привязан ни к одному кружку."
 
-        # 2. Находим последние 5 уроков из этих кружков с готовым AI-отчетом
+        # 2. Находим последние 5 уроков из этих кружков с готовым отчетом
         recent_lessons = Lesson.objects.filter(
             club_id__in=club_ids,
             ai_status='completed'
@@ -395,7 +374,7 @@ def chat_with_grok(messages: list, context_string: str) -> str:
         raise RuntimeError("GROK_API_KEY не задан.")
 
     system_prompt = (
-        "Ты — умный ИИ-наставник платформы TalentTap. Твоя цель — помогать ученику. "
+        "Ты — умный наставник платформы TalentTap. Твоя цель — помогать ученику. "
         f"Вот данные о последних пройденных уроках ученика:\n{context_string}\n\n"
         "Отвечай на вопросы пользователя, опираясь на эти данные. "
         "Если вопрос не связан с уроками, просто поддерживай дружелюбную беседу."
