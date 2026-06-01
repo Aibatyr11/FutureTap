@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>FutureTap / TalentTap</h1>
+  <h1>FutureTap</h1>
   <p><strong>A Modern Platform for Educational Clubs and Activities</strong></p>
 </div>
 
@@ -7,7 +7,7 @@
 
 ## About the Project
 
-**FutureTap (TalentTap)** is a comprehensive web platform designed to seamlessly connect students, parents, and coaches through educational clubs and extracurricular activities. The platform simplifies the process of finding the right activity, managing enrollments, and providing intelligent tracking of educational progress.
+**FutureTap** is a comprehensive web platform designed to seamlessly connect students, parents, and coaches through educational clubs and extracurricular activities. The platform simplifies the process of finding the right activity, managing enrollments, and providing intelligent tracking of educational progress.
 
 Whether you are looking for STEM classes, art workshops, or sports clubs, our platform uses advanced machine learning algorithms to recommend the best activities tailored to each student's profile, while our integrated AI chatbot assists users throughout their educational journey.
 
