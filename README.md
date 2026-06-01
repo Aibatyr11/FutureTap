@@ -1,38 +1,40 @@
 <div align="center">
-  <h1>🌟 FutureTap / TalentTap</h1>
+  <h1>FutureTap / TalentTap</h1>
   <p><strong>A Modern Platform for Educational Clubs and Activities</strong></p>
 </div>
 
 <br/>
 
-## 📖 About the Project
+## About the Project
 
-**FutureTap (TalentTap)** is a comprehensive web platform designed to seamlessly connect students, parents, and coaches through educational clubs and extracurricular activities. The platform simplifies the process of finding the right activity, managing enrollments, and providing smart tracking of progress.
+**FutureTap (TalentTap)** is a comprehensive web platform designed to seamlessly connect students, parents, and coaches through educational clubs and extracurricular activities. The platform simplifies the process of finding the right activity, managing enrollments, and providing intelligent tracking of educational progress.
 
-Whether you are looking for STEM classes, art workshops, or sports clubs, our platform uses advanced algorithms to recommend the best activities tailored to each student's profile.
+Whether you are looking for STEM classes, art workshops, or sports clubs, our platform uses advanced machine learning algorithms to recommend the best activities tailored to each student's profile, while our integrated AI chatbot assists users throughout their educational journey.
 
-## ✨ Key Features
+## Key Features
 
-- **Smart Recommendations:** Get personalized club recommendations based on age, interests, and schedule preferences.
-- **Audio Lesson Processing:** Integrated system to transcribe and summarize recorded lessons for easier review and feedback.
+- **Machine Learning Recommendations:** Personalized club recommendations generated using an internal ML engine (TF-IDF based) that analyzes age, interests, and schedule preferences.
+- **Smart Chatbot Assistant:** An intelligent assistant powered by the Grok API, utilizing Retrieval-Augmented Generation (RAG) to answer questions based on the student's lesson history.
+- **Audio Lesson Processing:** Integrated system leveraging OpenAI Whisper to transcribe recorded lessons, which are then summarized via Grok LLM to generate action items and tags.
 - **Interactive Coach Profiles:** Detailed profiles for coaches with their specializations, ratings, and active clubs.
 - **Seamless Enrollment:** Easy-to-use interface for parents and students to join clubs and manage their schedule.
-- **Progress Tracking:** Automatic generation of lesson summaries and action items to keep students on track.
+- **Hybrid Data Storage:** Relational data stored in PostgreSQL for robust transactions, and unstructured AI lesson reports stored in MongoDB.
 
-## 🚀 Technologies Used
+## Project Architecture
 
-### Backend
-- **Framework:** Django 5.2 & Django REST Framework
-- **Database:** PostgreSQL (with SQLite for local development)
-- **Authentication:** JWT (JSON Web Tokens)
-- **Task Processing & Audio Analysis:** Python-based advanced processing pipelines
+The system is built on a modern, decoupled architecture integrating web frameworks, machine learning, and external AI APIs.
 
-### Frontend
-- **Framework:** React (Vite)
-- **Styling:** Tailwind CSS (or similar modern utility frameworks)
-- **State Management & Routing:** Modern React ecosystem practices
+| Component | Technology | Description |
+|-----------|------------|-------------|
+| **Frontend** | React, Vite, Tailwind CSS | The client-side application offering a responsive and interactive user interface for students, parents, and coaches. |
+| **Backend API** | Django 5.2, Django REST Framework | The core server handling business logic, authentication (JWT), and API routing. |
+| **Relational DB** | PostgreSQL (SQLite for local) | Primary database storing users, profiles, enrollments, and club structures. |
+| **Document DB** | MongoDB | Stores unstructured, dynamically generated AI reports, lesson summaries, and transcriptions. |
+| **Machine Learning** | Scikit-Learn (TF-IDF Vectorizer) | An internal recommendation engine that calculates vector similarities to match students with the most suitable clubs. |
+| **AI Assistant / NLP** | Grok API (xAI) | Powers the intelligent chatbot and analyzes text to generate brief summaries and action items from transcripts. |
+| **Speech-to-Text** | OpenAI Whisper (Local) | Processes audio recordings of classes to produce accurate text transcripts. |
 
-## 🛠 Getting Started
+## Getting Started
 
 ### 1. Clone the repository
 ```bash
@@ -73,5 +75,5 @@ npm run dev
 
 The application will be available at `http://localhost:5173`.
 
-## 🛡 License
+## License
 This project is proprietary and built for educational purposes. All rights reserved.
