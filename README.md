@@ -60,6 +60,7 @@ python manage.py migrate
 python manage.py seed_data
 ```
 
+
 Start the backend server:
 ```bash
 python manage.py runserver 0.0.0.0:8000
