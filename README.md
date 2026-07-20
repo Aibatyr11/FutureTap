@@ -41,6 +41,7 @@ git clone https://github.com/Aibatyr11/FutureTap.git
 cd FutureTap
 ```
 
+
 ### 2. Backend Setup
 Navigate to the `backend` folder and set up your Python environment:
 ```bash
